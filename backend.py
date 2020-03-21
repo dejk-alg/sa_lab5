@@ -1,5 +1,14 @@
+from collections import defaultdict
 import numpy as np
 import matplotlib.pyplot as plt
+
+
+def lazy_wrapper(func):
+    def lazy_func(self, t: int):
+        if t not in self.cached_values[func].keys():
+            self.cached_values[func][t] = func(self, t)
+        return self.cached_values[func][t]
+    return lazy_func
 
 
 class IntegralAwarenessFactors:
@@ -10,6 +19,7 @@ class IntegralAwarenessFactors:
         self.completeness_0 = completeness_0
         self.credibility_0 = credibility_0
         self.timeliness_0 = timeliness_0
+        self.cached_values = defaultdict(dict)
 
     @classmethod
     def default_instance(cls):
@@ -57,18 +67,6 @@ class IntegralAwarenessFactors:
         }
         return IntegralAwarenessFactors.parse_values_dict(text_dict)
 
-    # @property
-    # def alphas(self):
-    #     return np.where(self.alphas_0 <= 1, np.exp(self.alphas_0) * self.completeness_0 * 0.5, 0)
-    #
-    # @property
-    # def betas(self):
-    #     return np.where(self.alphas_0 <= 1, (self.alphas_0 * self.gammas) * self.timeliness_0 * 1e-5, 0)
-    #
-    # @property
-    # def gammas(self):
-    #     return np.where(self.alphas_0 <= 1, np.exp(self.credibility_0) * self.alphas_0 * 0.05, 0)
-
     @property
     def alphas(self) -> np.ndarray:
         return 1 + (1 + self.alphas_0) * (1 + self.completeness_0 * self.credibility_0 * self.timeliness_0)
@@ -82,39 +80,42 @@ class IntegralAwarenessFactors:
         return (1 + 0.5 * self.betas * self.alphas_0 ** 2 * self.timeliness_0) ** 2
 
     def completeness_factor(self, t: int):
-        return 0.5 * self.completeness_0 * ((self.alphas + self.gammas) * t) ** 2
+        return 1 - np.exp(-5e-3 * self.completeness_0 * ((self.alphas + self.gammas) * t) ** 2)
 
     def credibility_factor(self, t: int):
-        return 0.5 * self.credibility_0 * ((self.alphas + self.gammas) * t) ** 2
+        return 1 - np.exp(-5e-3 * self.credibility_0 * ((self.alphas + self.gammas) * t) ** 2)
 
     def timeliness_factor(self, t: int):
-        return self.timeliness_0 * (1 + (1 - self.betas * t)) ** 2
+        return self.timeliness_0 * np.exp(-self.betas * t * 0.0625)
 
     def awareness_factor(self, t: int) -> np.ndarray:
         return np.prod(
-            [factor(t) for factor in (self.completeness_factor, self.credibility_factor, self.timeliness_factor)])
+            [factor(t) for factor in (self.completeness_factor, self.credibility_factor, self.timeliness_factor)], axis=0)
+
+    for attr_name in ('completeness_factor', 'credibility_factor', 'timeliness_factor', 'awareness_factor'):
+        locals()[attr_name] = lazy_wrapper(locals()[attr_name])
 
     def critical_probability(self, t) -> np.ndarray:
         return 1 - np.log(1 + self.alphas * self.awareness_factor(t))
 
     def timeseries(self, name: str, i: int, j: int, time_range: range) -> np.ndarray:
-        if name == 'completeness':
-            factor = self.completeness_factor
-        elif name == 'credibility':
-            factor = self.credibility_factor
-        elif name == 'timeliness':
-            factor = self.timeliness_factor
+        if name in ('completeness', 'credibility', 'timeliness', 'awareness'):
+            factor = getattr(self, f'{name}_factor')
         else:
             raise ValueError(f'timeseries name {name} not recognized')
 
         return np.array([factor(t)[i, j] for t in time_range])
 
     def plot(self, i: int, j: int, time_range: range):
-        fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True)
-        axs[0].set_xlabel('time')
-        for name, ax, color in zip(('completeness', 'credibility', 'timeliness'), axs, ('r', 'g', 'b')):
+        fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True)
+        for ax in axs[:, -1]:
+            ax.set_xlabel('time')
+        for name, ax, color in zip(
+                ('completeness', 'credibility', 'timeliness', 'awareness'), axs.flatten(), ('r', 'g', 'b', 'y')):
             ax.plot(time_range, self.timeseries(name, i, j, time_range), color)
             ax.set_ylabel(f'{name} factor')
+            ax.set_ylim((-0.1, 1.1))
 
         fig.tight_layout()
         plt.show()
+        plt.close(fig)
