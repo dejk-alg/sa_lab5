@@ -1,8 +1,9 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Iterable
 from collections import defaultdict
 from itertools import count
 import numpy as np
 import matplotlib.pyplot as plt
+from pandas import DataFrame
 
 
 def lazy_wrapper(func: Callable):
@@ -13,7 +14,7 @@ def lazy_wrapper(func: Callable):
     return lazy_func
 
 
-class IntegralAwarenessFactors:
+class IntegralAwareness:
     def __init__(
             self, alphas_0: np.ndarray,
             completeness_0: np.ndarray, credibility_0: np.ndarray, timeliness_0: np.ndarray):
@@ -24,6 +25,9 @@ class IntegralAwarenessFactors:
         self.cached_values = defaultdict(dict)
         self.alphas = self.betas = self.gammas = None
         self.set_coeffs()
+
+    def valid_factors(self, i):
+        return np.where(self.alphas_0[i] != -1)
 
     @classmethod
     def default_instance(cls):
@@ -69,21 +73,21 @@ class IntegralAwarenessFactors:
                 '''
 
         }
-        return IntegralAwarenessFactors.parse_values_dict(text_dict)
+        return IntegralAwareness.parse_values_dict(text_dict)
 
     def set_coeffs(self):
-        self.alphas =  1 + (1 + self.alphas_0) * (1 + self.completeness_0 * self.credibility_0 * self.timeliness_0)
+        self.alphas = 1 + (1 + self.alphas_0) * (1 + self.completeness_0 * self.credibility_0 * self.timeliness_0)
         self.betas = 1 + (1 + self.alphas_0 * self.credibility_0)
         self.gammas = (1 + 0.5 * self.betas * self.alphas_0 ** 2 * self.timeliness_0) ** 2
 
     def completeness_factor(self, t: int):
-        return 1 - np.exp(-5e-3 * self.completeness_0 * ((self.alphas + self.gammas) * t) ** 2)
+        return 1 - (1 - self.completeness_0) * np.exp(-1e-4 * ((self.alphas + self.gammas) * t) ** 2)
 
     def credibility_factor(self, t: int):
-        return 1 - np.exp(-5e-3 * self.credibility_0 * ((self.alphas + self.gammas) * t) ** 2)
+        return 1 - (1 - self.credibility_0) * np.exp(-1e-4 * ((self.alphas + self.gammas) * t) ** 2)
 
     def timeliness_factor(self, t: int):
-        return self.timeliness_0 * np.exp(-self.betas * t * 0.0625)
+        return self.timeliness_0 * np.exp(-1e-2 * self.betas * t)
 
     def awareness_factor(self, t: int) -> np.ndarray:
         return np.prod(
@@ -97,9 +101,11 @@ class IntegralAwarenessFactors:
             'critical_probability'):
         locals()[attr_name] = lazy_wrapper(locals()[attr_name])
 
-    def timeseries(self, name: str, i: int, j: int, time_range: range) -> np.ndarray:
+    def timeseries(self, name: str, i: int, j: int, time_range: Iterable) -> np.ndarray:
         if name in ('completeness', 'credibility', 'timeliness', 'awareness'):
             factor = getattr(self, f'{name}_factor')
+        elif name == 'critical_probability':
+            factor = getattr(self, name)
         else:
             raise ValueError(f'timeseries name {name} not recognized')
 
@@ -115,7 +121,7 @@ class IntegralAwarenessFactors:
             if limit_t is not None and t > limit_t:
                 return None
 
-    def critical_time_range(self, i: int, j: int, max_prob: int = 0.7, limit_t: Optional[int] = 20):
+    def critical_time_range_per_factor(self, i: int, j: int, max_prob: int = 0.7, limit_t: Optional[int] = None):
         best_t, best_prob = self.find_best_prob(i, j, limit_t)
         scaled_max_prob = max_prob * (1 - best_prob) + best_prob
         min_t = max_t = None
@@ -125,10 +131,35 @@ class IntegralAwarenessFactors:
             if min_t is not None and self.critical_probability(t)[i, j] > scaled_max_prob:
                 max_t = t - 1
                 return min_t, max_t
-            if limit_t is not None and t > limit_t:
+            if limit_t is not None and t >=\
+                    limit_t:
+                if min_t is None:
+                    raise ValueError
+                max_t = limit_t
                 return min_t, max_t
 
-    def plot(self, i: int, j: int, time_range: range):
+    def critical_time_range(self, i: int, max_prob: int = 0.7, limit_t: Optional[int] = None):
+        time_ranges = [self.critical_time_range_per_factor(i, j, max_prob, limit_t) for j in self.valid_factors(i)]
+        return min(map(lambda x: x[0], time_ranges)), max(map(lambda x: x[1], time_ranges))
+
+    def classify_situation(self, i: int, max_prob, limit_t):
+        time_range = self.critical_time_range(i, max_prob, limit_t)
+
+    def create_timeseries_df(self, i: int, j: int, time_range: Iterable):
+        timeseries = {name: self.timeseries(name, i, j, time_range)
+                      for name in ('completeness', 'credibility', 'timeliness', 'awareness')}
+        timeseries.update({'time': list(time_range)})
+        timeseries['values'] = {'critical_probability': self.timeseries('critical_probability', i, j, time_range)}
+        timeseries = DataFrame(timeseries)
+        return timeseries
+
+    def get_plot_dict(self, i: int, j: int, time_range: Iterable):
+        plot_dict = {f'{name}_factor': self.timeseries(name, i, j, time_range)
+                     for name in ('completeness', 'credibility', 'timeliness', 'awareness')}
+        plot_dict['time'] = list(time_range)
+        return plot_dict
+
+    def plot(self, i: int, j: int, time_range: Iterable):
         fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True)
         for ax in axs[:, -1]:
             ax.set_xlabel('time')
