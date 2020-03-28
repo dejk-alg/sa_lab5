@@ -6,11 +6,10 @@ def get_outputs(i: int, j: int, time_start: int, time_stop: int, time_step: int,
     time_range = range(time_start, time_stop, time_step)
     i -= 1
     j -= 1
-    factors.plot(i, j, time_range)
     return {
         'plot_dict': factors.get_plot_dict(i, j, time_range),
-        'critical_time_range': factors.critical_time_range(i, j, time_range, max_prob),
-        'timeseries_df': factors.create_timeseries_df()
+        'critical_time_range': factors.critical_time_range(i),
+        'classification_df': factors.classification_df()
     }
 
 

@@ -31,7 +31,7 @@ class IntegralAwareness:
         self.limit_t = limit_t
 
     def valid_factors(self, i):
-        return np.where(self.alphas_0[i] != -1)
+        return np.where(self.alphas_0[i] != -1)[0]
 
     @classmethod
     def default_instance(cls, max_prob: float, limit_t: Optional[int] = None):
@@ -143,7 +143,7 @@ class IntegralAwareness:
                 return min_t, max_t
 
     def critical_time_range(self, i: int):
-        time_ranges = [self.critical_time_range_per_factor(i, j,) for j in self.valid_factors(i)]
+        time_ranges = [self.critical_time_range_per_factor(i, j) for j in self.valid_factors(i)]
         return max(map(lambda x: x[0], time_ranges)), min(map(lambda x: x[1], time_ranges))
 
     def classify_situation(self, i: int):
@@ -158,7 +158,9 @@ class IntegralAwareness:
 
     def classification_df(self):
         classification = {i: self.classify_situation(i) for i in range(self.situations_amount)}
-        classification = DataFrame(classification)
+        print(classification)
+        classification = DataFrame(
+            {'Клас небезпечної ситуації': [self.classify_situation(i) for i in range(self.situations_amount)]})
         return classification
 
     def create_timeseries_df(self, i: int, j: int, time_range: Iterable):
