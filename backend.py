@@ -148,7 +148,7 @@ class IntegralAwareness:
 
     def classify_situation(self, i: int):
         time_range = self.critical_time_range(i)
-        time = 20
+        time = sum(self.critical_time_range(i)[1] for i in range(self.situations_amount)) / self.situations_amount * 0.8
         if time <= time_range[0]:
             return 'A1 - особливо небезпечна ситуація'
         elif time <= time_range[1]:
