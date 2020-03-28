@@ -121,10 +121,10 @@ class IntegralAwareness:
             if limit_t is not None and t > limit_t:
                 return None
 
-    def critical_time_range_per_factor(self, i: int, j: int, max_prob: int = 0.7, limit_t: Optional[int] = None):
+    def critical_time_range_per_factor(self, i: int, j: int, max_prob: float = 0.7, limit_t: Optional[int] = None):
         best_t, best_prob = self.find_best_prob(i, j, limit_t)
         scaled_max_prob = max_prob * (1 - best_prob) + best_prob
-        min_t = max_t = None
+        min_t = None
         for t in count():
             if min_t is None and self.critical_probability(t)[i, j] < scaled_max_prob:
                 min_t = t
@@ -138,12 +138,19 @@ class IntegralAwareness:
                 max_t = limit_t
                 return min_t, max_t
 
-    def critical_time_range(self, i: int, max_prob: int = 0.7, limit_t: Optional[int] = None):
+    def critical_time_range(self, i: int, max_prob: float = 0.7, limit_t: Optional[int] = None):
         time_ranges = [self.critical_time_range_per_factor(i, j, max_prob, limit_t) for j in self.valid_factors(i)]
-        return min(map(lambda x: x[0], time_ranges)), max(map(lambda x: x[1], time_ranges))
+        return max(map(lambda x: x[0], time_ranges)), min(map(lambda x: x[1], time_ranges))
 
-    def classify_situation(self, i: int, max_prob, limit_t):
+    def classify_situation(self, i: int, max_prob: float, limit_t):
         time_range = self.critical_time_range(i, max_prob, limit_t)
+        time = 20
+        if time <= time_range[0]:
+            return 'A1 - особливо небезпечна ситуація'
+        elif time <= time_range[1]:
+            return 'A2 - потенційно небезпечна ситуація'
+        else:
+            return 'A3 - майже безпечна ситуація'
 
     def create_timeseries_df(self, i: int, j: int, time_range: Iterable):
         timeseries = {name: self.timeseries(name, i, j, time_range)
