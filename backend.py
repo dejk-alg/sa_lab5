@@ -1,9 +1,11 @@
+from typing import Callable, Optional
 from collections import defaultdict
+from itertools import count
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-def lazy_wrapper(func):
+def lazy_wrapper(func: Callable):
     def lazy_func(self, t: int):
         if t not in self.cached_values[func].keys():
             self.cached_values[func][t] = func(self, t)
@@ -20,6 +22,8 @@ class IntegralAwarenessFactors:
         self.credibility_0 = credibility_0
         self.timeliness_0 = timeliness_0
         self.cached_values = defaultdict(dict)
+        self.alphas = self.betas = self.gammas = None
+        self.set_coeffs()
 
     @classmethod
     def default_instance(cls):
@@ -67,17 +71,10 @@ class IntegralAwarenessFactors:
         }
         return IntegralAwarenessFactors.parse_values_dict(text_dict)
 
-    @property
-    def alphas(self) -> np.ndarray:
-        return 1 + (1 + self.alphas_0) * (1 + self.completeness_0 * self.credibility_0 * self.timeliness_0)
-
-    @property
-    def betas(self) -> np.ndarray:
-        return 1 + (1 + self.alphas_0 * self.credibility_0)
-
-    @property
-    def gammas(self) -> np.ndarray:
-        return (1 + 0.5 * self.betas * self.alphas_0 ** 2 * self.timeliness_0) ** 2
+    def set_coeffs(self):
+        self.alphas =  1 + (1 + self.alphas_0) * (1 + self.completeness_0 * self.credibility_0 * self.timeliness_0)
+        self.betas = 1 + (1 + self.alphas_0 * self.credibility_0)
+        self.gammas = (1 + 0.5 * self.betas * self.alphas_0 ** 2 * self.timeliness_0) ** 2
 
     def completeness_factor(self, t: int):
         return 1 - np.exp(-5e-3 * self.completeness_0 * ((self.alphas + self.gammas) * t) ** 2)
@@ -90,13 +87,15 @@ class IntegralAwarenessFactors:
 
     def awareness_factor(self, t: int) -> np.ndarray:
         return np.prod(
-            [factor(t) for factor in (self.completeness_factor, self.credibility_factor, self.timeliness_factor)], axis=0)
+            [fact(t) for fact in (self.completeness_factor, self.credibility_factor, self.timeliness_factor)], axis=0)
 
-    for attr_name in ('completeness_factor', 'credibility_factor', 'timeliness_factor', 'awareness_factor'):
-        locals()[attr_name] = lazy_wrapper(locals()[attr_name])
-
-    def critical_probability(self, t) -> np.ndarray:
+    def critical_probability(self, t: int) -> np.ndarray:
         return 1 - np.log(1 + self.alphas * self.awareness_factor(t))
+
+    for attr_name in (
+            'completeness_factor', 'credibility_factor', 'timeliness_factor', 'awareness_factor',
+            'critical_probability'):
+        locals()[attr_name] = lazy_wrapper(locals()[attr_name])
 
     def timeseries(self, name: str, i: int, j: int, time_range: range) -> np.ndarray:
         if name in ('completeness', 'credibility', 'timeliness', 'awareness'):
@@ -105,6 +104,29 @@ class IntegralAwarenessFactors:
             raise ValueError(f'timeseries name {name} not recognized')
 
         return np.array([factor(t)[i, j] for t in time_range])
+
+    def find_best_prob(self, i: int, j: int, limit_t: Optional[int] = None):
+        prev_prob = 1
+        for t in count():
+            crit_prob_unscaled = self.critical_probability(t)[i, j]
+            if crit_prob_unscaled > prev_prob:
+                return t - 1, prev_prob
+            prev_prob = crit_prob_unscaled
+            if limit_t is not None and t > limit_t:
+                return None
+
+    def critical_time_range(self, i: int, j: int, max_prob: int = 0.7, limit_t: Optional[int] = 20):
+        best_t, best_prob = self.find_best_prob(i, j, limit_t)
+        scaled_max_prob = max_prob * (1 - best_prob) + best_prob
+        min_t = max_t = None
+        for t in count():
+            if min_t is None and self.critical_probability(t)[i, j] < scaled_max_prob:
+                min_t = t
+            if min_t is not None and self.critical_probability(t)[i, j] > scaled_max_prob:
+                max_t = t - 1
+                return min_t, max_t
+            if limit_t is not None and t > limit_t:
+                return min_t, max_t
 
     def plot(self, i: int, j: int, time_range: range):
         fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True)
