@@ -157,10 +157,9 @@ class IntegralAwareness:
             return 'A3 - майже безпечна ситуація'
 
     def classification_df(self):
-        classification = {i: self.classify_situation(i) for i in range(self.situations_amount)}
-        print(classification)
         classification = DataFrame(
-            {'Клас небезпечної ситуації': [self.classify_situation(i) for i in range(self.situations_amount)]})
+            {'Клас небезпечної ситуації': [self.classify_situation(i) for i in range(self.situations_amount)]},
+            index=range(1, 1 + self.situations_amount))
         return classification
 
     def create_timeseries_df(self, i: int, j: int, time_range: Iterable):
