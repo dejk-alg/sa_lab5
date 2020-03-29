@@ -177,6 +177,10 @@ class IntegralAwareness:
         plot_dict['time'] = list(time_range)
         return plot_dict
 
+    def plot_iter(self, i: int, j: int, time_range: list, window_size: int = 10):
+        return (self.create_timeseries_df(i, j, range(time_range[0], finish, time_range[1] - time_range[0]))
+                for finish in list(range(time_range[0], time_range[-1], window_size)) + [time_range[-1]])
+
     def plot(self, i: int, j: int, time_range: Iterable):
         fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True)
         for ax in axs[:, -1]:
