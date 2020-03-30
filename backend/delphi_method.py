@@ -24,7 +24,8 @@ class DelfiMethod(object):
         experts_proof,
         W,
         experts_df,
-        xs
+        xs,
+        levels
     ):
         
         self.cases = cases
@@ -36,16 +37,12 @@ class DelfiMethod(object):
         self.W = W
         self.experts_df = experts_df
         self.xs = xs
-        
-        self.solutions = [
-        'Надто низький рівень', 
-        'Дуже низький рівень', 
-        'Низький рівень', 
-        'Середній рівень', 
-        'Високий рівень', 
-        'Дуже високий рівень', 
-        'Надто високий рівень'
-        ]
+        self.solutions = levels
+
+        self.n_experts = len(self.experts_proof)
+        self.n_solutions = len(self.solutions)
+        self.n_criteria = len(self.criteria)
+        self.n_cases = len(self.cases)
         
         self.experts_intervals = {c:{v:self.compute_df_interval(experts_df[c][v]) for v in experts_df[c].keys()} for c in experts_df.keys()}
         self.expected_values = {c:{v:self.compute_expected_value(self.experts_intervals[c][v]) for v in experts_df[c].keys()} for c in experts_df.keys()}
@@ -63,13 +60,10 @@ class DelfiMethod(object):
             self.median_expert[c][v],
             self.experts_intervals[c][v]
         ) for v in experts_df[c].keys()} for c in experts_df.keys()}
-        
-    def compute_interval_points(self, mu, v):
-        d_min = np.abs(mu - mu*(1-v)*self.K)
-        d_min[d_min<0] = 0
-        d_max = np.abs(mu + mu*(1-v)*self.K)
-        d_max[d_max>1] = 1
-        return d_min, d_max
+
+        self.overall_info_df = self.compute_overall_df()
+        self.mark_df_numerical = self.compute_mark_df_numerical()
+        self.mark_df_values = self.compute_mark_df_in_values()
     
     @staticmethod
     def extract_mu_values(df):
@@ -103,6 +97,90 @@ class DelfiMethod(object):
         
         dist = dist.mean(axis=1)
         return dist
+
+    def compute_interval_points(self, mu, v):
+        d_min = np.abs(mu - mu*(1-v)*self.K)
+        d_min[d_min<0] = 0
+        d_max = np.abs(mu + mu*(1-v)*self.K)
+        d_max[d_max>1] = 1
+        return d_min, d_max
+
+    def compute_mark_df_in_values(self):
+        mark_df = []
+
+        for case in self.cases:
+            mark_df.append([self.solutions[self.best_solution[case][criteria][0]] for criteria in self.criteria])
+
+        mark_df = pd.DataFrame(mark_df)
+        mark_df.index = self.cases
+        mark_df.columns = self.criteria
+
+        return mark_df
+
+    def compute_mark_df_numerical(self):
+        mark_df = []
+
+        for case in self.cases:
+            mark_df.append([self.xs[self.best_solution[case][criteria][0]] for criteria in self.criteria])
+
+        mark_df = np.array(mark_df)
+        case_marks = (mark_df * self.W).mean(axis=1)
+        case_lb = np.argsort(-case_marks) + 1
+
+        mark_df = np.concatenate([
+            np.expand_dims(case_lb, -1), 
+            mark_df, 
+            np.expand_dims(case_marks, -1)
+        ], axis=-1)
+
+        mark_df = pd.DataFrame(mark_df)
+        mark_df.index = self.cases
+        mark_df.columns = [
+            np.array(['№'] + self.criteria+['Wn']),
+            np.array([''] + self.W + [''])
+        ]
+
+        return mark_df
+
+    def compute_overall_df(self):
+        overall_info_df = []
+        for case in self.cases:
+            
+            # Number of accepted experts 
+            overall_info_df.append([self.experts_belive_interval[case][criteria].sum() for criteria in self.criteria])
+            
+            # Percantage of accepted experts
+            percantage = []
+            for criteria in self.criteria:
+                criteria_believe = self.experts_belive_interval[case][criteria]
+                percantage.append(criteria_believe.sum() / criteria_believe.shape[0])
+            overall_info_df.append(percantage)
+            
+            # Median expert
+            overall_info_df.append(['Expert {}'.format(self.median_expert[case][criteria]+1) for criteria in self.criteria])
+            
+            # Get best mark mu and approval
+            mu, approval, level = [], [], []
+            for criteria in self.criteria:
+                info = self.best_solution[case][criteria]
+                level.append(info[0] + 1)
+                mu.append(info[1])
+                approval.append(info[2])
+                
+            overall_info_df.append(approval)
+            overall_info_df.append(mu)
+            overall_info_df.append(level)
+
+        overall_info_df = pd.DataFrame(overall_info_df)
+
+        overall_info_df.index = [
+            np.array(list(chain(*[[el]*6 for el in self.criteria]))),
+            np.array(['exp','%','Mid','S','Q','s']*len(self.criteria))
+        ]
+
+        overall_info_df.columns = self.cases
+
+        return overall_info_df
     
     def compute_best_mark(self, median_expert, df_intervals):
         d_min = DelfiMethod.extract_dmin_values(df_intervals).values
@@ -123,7 +201,7 @@ class DelfiMethod(object):
         else:
             best_solution = best_solution[0]
         
-        return best_solution
+        return (best_solution, mu[best_solution],1 - abs(d_max[best_solution] - d_min[best_solution]))
     
     def compute_believe_intervals(self, median_expert, df_intervals, expert_conf):
         d_min = DelfiMethod.extract_dmin_values(df_intervals).values
@@ -233,7 +311,7 @@ class DelfiMethod(object):
                 'dmin_k_{}'.format(i),
                 'Mu_k_{}'.format(i),
                 'dmax_k_{}'.format(i)] 
-                for i in range(1,8)]))
+                for i in range(1, self.n_solutions + 1)]))
         )
                     
         return df_interval
@@ -259,7 +337,7 @@ class DelfiMethod(object):
     def plot_point_predictions(self, case, crit):
         df = self.experts_df[case][crit]
         mu_values = DelfiMethod.extract_mu_values(df).values
-        for i in range(16):
+        for i in range(self.n_experts):
             plt.plot(mu_values[i], '-o', label='Expert {}'.format(i+1))
               
         plt.title('Точкова оцінка')
@@ -280,7 +358,7 @@ class DelfiMethod(object):
     def plot_expected_predictions(self, case, crit):
         df = self.experts_df[case][crit]
         mu_values = DelfiMethod.extract_mu_values(df).values
-        for i in range(16):
+        for i in range(self.n_experts):
             plt.plot(mu_values[i], 'o-', label='Expert {}'.format(i+1))
             
         df_expected = self.expected_values[case][crit]
@@ -296,7 +374,7 @@ class DelfiMethod(object):
     def plot_expected_predictions(self, case, crit):
         df = self.experts_df[case][crit]
         mu_values = DelfiMethod.extract_mu_values(df).values
-        for i in range(16):
+        for i in range(self.n_experts):
             plt.plot(mu_values[i], 'o-', label='Expert {}'.format(i+1))
             
         df_expected = self.expected_values[case][crit]
@@ -312,7 +390,7 @@ class DelfiMethod(object):
     def plot_integral_predictions(self, case, crit):
         df = self.experts_df[case][crit]
         mu_values = DelfiMethod.extract_mu_values(df).values
-        for i in range(16):
+        for i in range(self.n_experts):
             plt.plot(mu_values[i], 'o-', label='Expert {}'.format(i+1), linewidth=0.4)
             
         df_expected = self.expected_values[case][crit]
@@ -333,7 +411,7 @@ class DelfiMethod(object):
     def plot_integral_gaussian(self, case, crit):
         df = self.experts_df[case][crit]
         mu_values = DelfiMethod.extract_mu_values(df).values
-        for i in range(16):
+        for i in range(self.n_experts):
             plt.plot(mu_values[i], 'o-', label='Expert {}'.format(i+1), linewidth=0.4)
         
         df_integral = self.integral_values[case][crit]
@@ -356,7 +434,7 @@ class DelfiMethod(object):
         mu_values = DelfiMethod.extract_mu_values(df).values
         
         expert_values = self.expert_conf[case][crit]
-        for i in range(16):
+        for i in range(self.n_experts):
             plt.plot(mu_values[i], 'go-', label='Expert {}'.format(i+1), linewidth=2.0, color=(0.3,0.3,0.5,expert_values[i]))
         
         df_integral_gaussian = self.integral_gaussian_values[case][crit]
@@ -377,7 +455,7 @@ class DelfiMethod(object):
         df_median = self.experts_intervals[case][crit]
         interval_pred = DelfiMethod.extract_expert_values(df_median, median_expert+1)
         
-        for i in range(16):
+        for i in range(self.n_experts):
             if  i == median_expert:
                 plt.plot(interval_pred[0], '-o', label='d_min', linewidth=2.0)
                 plt.plot(interval_pred[1], '-o', label='Expert median {}'.format(i+1), linewidth=3.0)
@@ -404,9 +482,9 @@ class DelfiMethod(object):
         
         print('Оцінки у кластері узгоджені' if believed_intervals.sum() / believed_intervals.shape[0] > self.S_star 
               else 'Оцінки у кластері неузгоджені')
-        print('Найкращий вибір {} з ймовірністю єксперта {}'.format(self.solutions[best_solution], mu_values[median_expert, best_solution]))
+        print('Найкращий вибір {} з ймовірністю єксперта {} й узгодженістю {}'.format(self.solutions[best_solution[0]], best_solution[1], best_solution[2]))
                 
-        for i in range(16):
+        for i in range(self.n_experts):
             if  i == median_expert:
                 plt.plot(interval_pred[0], 'c-o', label='d_min', linewidth=2.0)
                 plt.plot(interval_pred[1], 'm-o', label='Expert median {}'.format(i+1), linewidth=3.0)
