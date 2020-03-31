@@ -711,6 +711,7 @@ class DelfiMethod(object):
             "v--",
             label="Gauss +",
             linewidth=2.0,
+            color="green"
         )
         plt.plot(
             self.xs,
@@ -718,6 +719,7 @@ class DelfiMethod(object):
             "^--",
             label="Gauss -",
             linewidth=2.0,
+            color="green"
         )
 
         plt.title("Estimate of experts by the lowest and the highest quality value")
