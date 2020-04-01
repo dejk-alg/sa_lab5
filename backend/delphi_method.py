@@ -2,6 +2,7 @@ import warnings
 
 from itertools import chain
 from runpy import run_path
+from copy import deepcopy
 
 import pandas as pd
 import numpy as np
@@ -520,7 +521,7 @@ class DelfiMethod(object):
         df = self.experts_df[case][crit]
         mu_values = DelfiMethod.extract_mu_values(df).values
         for i in range(self.n_experts):
-            plt.plot(mu_values[i], "-o", label="Expert {}".format(i + 1))
+            plt.plot(self.xs, mu_values[i], "-o", label="Expert {}".format(i + 1))
 
         plt.title("Point estimate")
         plt.legend()
@@ -745,7 +746,7 @@ class DelfiMethod(object):
 
         for i in range(self.n_experts):
             if i == median_expert:
-                plt.plot(self.xs, interval_pred[0], "-o", label="d_min", linewidth=2.0)
+                plt.plot(self.xs, interval_pred[0], "-o", label="low mean", linewidth=2.0)
                 plt.plot(
                     self.xs,
                     interval_pred[1],
@@ -753,7 +754,7 @@ class DelfiMethod(object):
                     label="Expert median {}".format(i + 1),
                     linewidth=3.0,
                 )
-                plt.plot(self.xs, interval_pred[2], "-o", label="d_max", linewidth=2.0)
+                plt.plot(self.xs, interval_pred[2], "-o", label="high mean", linewidth=2.0)
             else:
                 plt.plot(
                     self.xs,
@@ -843,3 +844,211 @@ class DelfiMethod(object):
         plt.title("""Experts' estimates that are/aren't in confidence interval""")
         plt.legend()
         plt.show()
+
+    def get_main_info(self):
+        """
+        Return main method info
+
+        Return
+        ----------
+        Dict, where :
+        DataFrames : [
+            'Results of experts estimation by Delphi method',
+            'Agreed quantitative estimates of the expert survey by Delphi method(numbers)',
+            'Agreed quantitative estimates of the expert survey by Delphi method(values)'
+        ],
+        Lists for dropout lists: [
+            'cases',
+            'criteria',
+            'experts'
+        ]
+        """
+        return {
+            'Results of experts estimation by Delphi method':self.overall_info_df,
+            'Agreed quantitative estimates of the expert survey by Delphi method(numbers)':self.mark_df_numerical,
+            'Agreed quantitative estimates of the expert survey by Delphi method(values)':self.mark_df_values,
+            'cases':self.cases,
+            'criteria':self.criteria,
+            'experts':[i for i in range(1, self.n_experts+1)]
+        }
+
+    def get_case_criteria_info(self, case: str, criteria: str):
+        """
+        Return (case,criteria) info
+
+        Parameters
+        ----------
+        case: str
+            value from 'cases' list
+        criteria: str
+            value from 'criteria' list
+        Return
+        ----------
+        Dict, where:
+        DataFrames : [
+            'Input expert estimations'
+            'Expert interval estimates'=
+        ]
+        Heatmaps : [
+            'Heatmap of experts estimates distances'
+        ]
+        Strings : [
+            'Cluster main information'
+        ]
+        Plots : [
+            'Point Estimate'
+            'Interval estimate of the mean of interval estimates'
+            'Interval integrated expert estimates'
+            'Discrete interval gaussian density'
+            'Estimate of experts by the lowest and the highest quality value'
+            'Median interval estimate'
+            'Experts estimates that are/are not in confidence interval'
+        ]
+        Notes
+        ----------
+        In 'Estimate of experts by the lowest and the highest quality value', there
+        is a field `line_intensity` it is not one of ys it is the intensity of each y plot
+        and shold be handeled in such a way 'color=(1.0, 0.0, 0.0, intensity[i])' if you
+        use rgba color map
+
+        In 'Experts estimates that are/are not in confidence interval', there
+        is a field `line_mask` it is not one of ys it is bool mask for some ys, so
+        ys with True value should be colored in one color and with False in another
+        """
+        df = self.experts_df[case][criteria]
+        mu_values = DelfiMethod.extract_mu_values(df).values
+        df_expected = self.expected_values[case][criteria]
+        df_integral = self.integral_values[case][criteria]
+        df_integral_gaussian = self.integral_gaussian_values[case][criteria]
+        expert_values = self.expert_conf[case][criteria]
+        expert_values = (expert_values - expert_values.min()) / (
+            expert_values.max() - expert_values.min()
+        )
+
+        median_expert = self.median_expert[case][criteria]
+        df_median = self.experts_intervals[case][criteria]
+        interval_pred = DelfiMethod.extract_expert_values(df_median, median_expert + 1)
+        best_solution = self.best_solution[case][criteria]
+        believed_intervals = self.experts_belive_interval[case][criteria]
+        cluster_confidence = believed_intervals.sum() / believed_intervals.shape[0]
+
+        # Point Estimate
+        point_estimates = {
+            'index':self.xs,
+        }
+        point_estimates.update({"Expert {}".format(i + 1):mu_values[i] for i in range(self.n_experts)})
+
+        # Interval estimate of the mean of interval estimates
+        interval_estimates = deepcopy(point_estimates)
+        interval_estimates.update({
+            'low mean':df_expected["dmin_expected"],
+            'mean':df_expected["mu_expected"],
+            'high mean':df_expected["dmax_expected"]
+        })
+
+        # Interval integrated expert estimate
+        integral_estimates = deepcopy(interval_estimates)
+        integral_estimates.update({
+            'Model -':df_integral["model_down"],
+            'Model +':df_integral["model_up"]
+        })
+
+        # Discrete interval gaussian density
+        gaussian_estimates = deepcopy(point_estimates)
+        gaussian_estimates.update({
+            'Model -':df_integral["model_down"],
+            'Model +':df_integral["model_up"],
+            'Gauss +':df_integral_gaussian["model_gaussian_up"],
+            'Gauss -':df_integral_gaussian["model_gaussian_down"]
+        })
+
+        # Estimate of experts by the lowest and the highest quality value
+        quality_estimates = deepcopy(point_estimates)
+        quality_estimates.update({
+            'Gauss +':df_integral_gaussian["model_gaussian_up"],
+            'Gauss -':df_integral_gaussian["model_gaussian_down"],
+            'line_intensity':expert_values
+        })
+
+        # Median interval estimate
+        median_estimate = {
+            'index':self.xs
+        }
+        for i in range(self.n_experts):
+            if i == median_expert:
+                median_estimate.update({'low mean':interval_pred[0]})
+                median_estimate.update({'Expert median {}'.format(i + 1):interval_pred[1]})
+                median_estimate.update({'high mean':interval_pred[2]})
+            else:
+                median_estimate.update({'Expert {}'.format(i + 1):mu_values[i]})
+
+        # Experts estimates that are/are not in confidence interval
+        good_bad_experts = deepcopy(median_estimate)
+
+        experts_dict = ['Expert {}'.format(i + 1) if i != median_expert else 'Expert median {}'.format(i + 1) for i in range(self.n_experts)]
+        experts_dict = {k:v for k,v in zip(experts_dict, believed_intervals)}
+
+        good_bad_experts.update({
+            'line_mask':experts_dict
+        })
+
+        # Main info
+        str_info = ("Estimates in cluster are agreed"
+            if cluster_confidence > self.S_star
+            else "Estimates in cluster are not agreed")
+        str_info += '\n' +  "Best choice is: {}.\nWith the probability: {}.\nAnd confidence: {}".format(
+                self.solutions[best_solution[0]],
+                best_solution[1],
+                cluster_confidence * 100,
+            )
+
+        return {
+            # DataFrames
+            'Input expert estimations':self.experts_df[case][criteria],
+            'Expert interval estimates':self.experts_intervals[case][criteria],
+            # Heatmap
+            'Heatmap of experts estimates distances':self.expert_distance_matrices[case][criteria],
+            # Str
+            'Cluster main information':str_info,
+            # Plots
+            'Point Estimate':point_estimates,
+            'Interval estimate of the mean of interval estimates':interval_estimates,
+            'Interval integrated expert estimates':integral_estimates,
+            'Discrete interval gaussian density':integral_estimates,
+            'Estimate of experts by the lowest and the highest quality value':quality_estimates,
+            'Median interval estimate':median_estimate,
+            'Experts estimates that are/are not in confidence interval':good_bad_experts
+        }
+
+    def get_expert_info(self, case: str, criteria: str, expert_id: int):
+        """
+        Return (case,criteria, expert_id) info
+
+        Parameters
+        ----------
+        case: str
+            value from 'cases' list
+        criteria: str
+            value from 'criteria' list
+        expert_id: int
+            value from 'experts' list
+        Return
+        ----------
+        Dict, where:
+        Plots : [
+            'Interval estimate of expert'
+        ]
+        """
+        df = self.experts_intervals[case][criteria]
+        interval_pred = DelfiMethod.extract_expert_values(df, expert_id)
+
+        plot = {
+            'index':self.xs,
+            'low mean':interval_pred[0],
+            'mean':interval_pred[1],
+            'high mean':interval_pred[2]
+        }
+
+        return {
+            'Interval estimate of expert':plot
+        }
