@@ -42,6 +42,17 @@ def connect(obj, func):
     return obj
 
 
+PENS = {'low mean': pg.mkPen(color=(0, 255, 0)),
+        'high mean': pg.mkPen(color=(0, 255, 0)),
+        'mean': pg.mkPen(color=(255, 0, 0)),
+        'Model -': pg.mkPen(color=(0, 0, 255)),
+        'Model +': pg.mkPen(color=(0, 0, 255)),
+        'Gauss +': pg.mkPen(color=(0, 255, 0)),
+        'Gauss -': pg.mkPen(color=(0, 255, 0)),
+        'Expert median': pg.mkPen(color=(0, 255, 255)),
+        }
+
+
 class MainWindow(QWidget):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
@@ -137,6 +148,8 @@ class MainWindow(QWidget):
         self.experts_list.addItems([str(el) for el in main_info['experts']])
         return
 
+
+
     def plot_grapg(self, plot_widget, data):
         if 'line_intensity' in data.keys():
             data.pop('line_intensity')
@@ -146,11 +159,19 @@ class MainWindow(QWidget):
         if 'index' in data.keys():
             idx = data.pop('index')
             for key, value in data.items():
-                plot_widget.plot(idx, value)
+                if (key in PENS.keys()) or (key[:-2] in PENS.keys()):
+                    plot_widget.plot(idx, value, pen=PENS[key])
+                else:
+                    plot_widget.plot(idx, value)
         else:
             print('non_index')
             for key, value in data.items():
-                plot_widget.plot(list(range(len(value))), value)
+                idx = list(range(len(value)))
+                if (key in PENS.keys()) or (key[:-2] in PENS.keys()):
+                    plot_widget.plot(idx, value, pen=PENS[key])
+                else:
+                    plot_widget.plot(idx, value)
+
 
     @pyqtSlot()
     def __plot_button_press(self):
