@@ -1,35 +1,39 @@
-from backend import IntegralAwareness
+def backend(params):
+    return None
 
 
-def get_outputs(i: int, j: int, time_start: int, time_stop: int, time_step: int, max_prob: float):
-    factors = IntegralAwareness.default_instance(max_prob=max_prob, limit_t=time_stop)
-    time_range = range(time_start, time_stop, time_step)
-    i -= 1
-    j -= 1
-    #print(factors.plot_iter(i, j, time_range))
-    return {
-        'plot_dict': factors.get_plot_dict(i, j, time_range),
-        'critical_time_range': factors.critical_time_range(i),
-        'classification_df': factors.classification_df()
-    }
-
-'''
-def run():
-    print(get_outputs(3, 4, 0, 100, 1, 0.2))
-
-
-if __name__ == '__main__':
-    run()
-'''
-
+import numpy as np
 
 import pyqtgraph as pg
 import sys
 #import qdarkstyle
 
-from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QLabel, QSpinBox, QTabWidget, QApplication, QTextBrowser, QDoubleSpinBox
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QLabel, QSpinBox, QTabWidget, QApplication, QTextBrowser, QLineEdit, QTableView
+from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtCore import pyqtSlot
+
+
+class TableModel(QAbstractTableModel):
+    def __init__(self, data):
+        super(TableModel, self).__init__()
+        data = np.array(data).tolist()
+        self._data = data
+
+    def data(self, index, role):
+        if role == Qt.DisplayRole:
+            # See below for the nested-list data structure.
+            # .row() indexes into the outer list,
+            # .column() indexes into the sub-list
+            return self._data[index.row()][index.column()]
+
+    def rowCount(self, index):
+        # The length of the outer list.
+        return len(self._data)
+
+    def columnCount(self, index):
+        # The following takes the first sub-list, and returns
+        # the length (only works if all rows are an equal length)
+        return len(self._data[0])
 
 
 def connect(obj, func):
@@ -49,94 +53,92 @@ class MainWindow(QWidget):
         self.__stop_calc = False
 
     def __initUI__(self):
-        self.__i = QSpinBox(value=4)
-        self.__i.setRange(0, 10)
-        self.__j = QSpinBox(value=7)
-        self.__j.setRange(0, 10)
-        self.__prob = QDoubleSpinBox(value=0.5, )
-        self.__prob.setRange(0, 1)
-        self.__prob.setSingleStep(0.1)
-        self.__start = QSpinBox(value=0)
-        self.__stop = QSpinBox(value=100)
-        self.__step = QSpinBox(value=1)
+        self.graph = pg.PlotWidget()
+        self.table = QTableView()
+        grapg_and_table = QTabWidget()
+        grapg_and_table.setMinimumHeight(400)
+        grapg_and_table.setMinimumWidth(700)
+        grapg_and_table.addTab(self.graph, "Graph")
+        grapg_and_table.addTab(self.table, 'table')
 
-        self.__calc_button = QPushButton('Calculate Results')
-        self.__calc_button.clicked.connect(self.__button_press)
+        self.new_scenario_input = QLineEdit()
+        self.new_scenario_button = QPushButton('new_scenario')
+        self.new_scenario_button.clicked.connect(self.new_scenario_button_func)
+        self.restore_default_values_button = QPushButton('restore_default_values')
+        self.restore_default_values_button.clicked.connect(self.restore_default_values_func)
+
+        self.node_name_input_1 = QLineEdit()
+        self.node_name_input_2 = QLineEdit()
+        self.node_name_input_3 = QLineEdit()
+        self.bound_value_input = QLineEdit()
+
+        self.add_node_button = QPushButton('add_node')
+        self.add_node_button.clicked.connect(self.add_node_func)
+
+        self.delete_node_button = QPushButton('delete_node')
+        self.delete_node_button.clicked.connect(self.delete_node_func)
+
+        self.apply_bound_value_button = QPushButton('apply_bound_value')
+        self.apply_bound_value_button.clicked.connect(self.apply_bound_value_func)
 
         self.text_output = QTextBrowser()
-        self.graphics_tabs = QTabWidget()
-
-        i_j_grid = QGridLayout()
-        i_j_grid.setVerticalSpacing(5)
-        i_j_grid.addWidget(QLabel('i'), 0, 0)
-        i_j_grid.addWidget(QLabel('j'), 1, 0)
-        i_j_grid.addWidget(self.__i, 0, 1)
-        i_j_grid.addWidget(self.__j, 1, 1)
-
-        prob_grid = QGridLayout()
-        prob_grid.setVerticalSpacing(5)
-        prob_grid.addWidget(QLabel('prob'), 0, 0)
-        prob_grid.addWidget(self.__prob, 0, 1)
-
-        t_grid = QGridLayout()
-        t_grid.setVerticalSpacing(5)
-        t_grid.addWidget(QLabel('t start'), 0, 0)
-        t_grid.addWidget(QLabel('t stop'), 1, 0)
-        t_grid.addWidget(QLabel('t step'),2, 0)
-        t_grid.addWidget(self.__start, 0, 1)
-        t_grid.addWidget(self.__stop, 1, 1)
-        t_grid.addWidget(self.__step, 2, 1)
-
-        menu_layout = QGridLayout()
-        menu_layout.setHorizontalSpacing(50)
-        menu_layout.addWidget(QLabel('I and J', alignment=Qt.AlignCenter), 0, 0)
-        menu_layout.addWidget(QLabel('Prob', alignment=Qt.AlignCenter), 0, 1)
-        menu_layout.addWidget(QLabel('Time', alignment=Qt.AlignCenter), 0, 2)
-        menu_layout.addLayout(i_j_grid, 1, 0)
-        menu_layout.addLayout(prob_grid, 1, 1)
-        menu_layout.addLayout(t_grid, 1, 2)
-
-        self.graphics_tabs.addTab(pg.PlotWidget(), "Result")
-        self.__calc_button.setMaximumWidth(300)
+        self.text_output.setMinimumHeight(300)
+        self.text_output.setMinimumWidth(400)
 
         main_layout = QGridLayout()
         main_layout.setVerticalSpacing(20)
-        main_layout.addLayout(menu_layout, 0, 0, 1, -1)
+        main_layout.setHorizontalSpacing(20)
 
-        main_layout.addWidget(self.graphics_tabs, 2, 0)
-        main_layout.addWidget(self.text_output, 2, 1)
-        main_layout.addWidget(self.__calc_button, 1, 1, alignment=Qt.AlignRight)
+        main_layout.addWidget(grapg_and_table, 0, 0, 3, 3)
+
+        main_layout.addWidget(self.new_scenario_input, 0, 4,)
+        main_layout.addWidget(self.new_scenario_button, 1, 4,)
+        main_layout.addWidget(self.restore_default_values_button, 2, 4)
+
+        main_layout.addWidget(self.node_name_input_1, 3, 0)
+        main_layout.addWidget(self.add_node_button, 4, 0,)
+        main_layout.addWidget(self.delete_node_button, 5, 0,)
+
+        main_layout.addWidget(self.node_name_input_2, 3, 1,)
+        main_layout.addWidget(self.node_name_input_3, 3, 2,)
+        main_layout.addWidget(self.bound_value_input, 4, 1, 1, 2)
+        main_layout.addWidget(self.apply_bound_value_button, 5, 1, 1, 2)
+
+        main_layout.addWidget(self.text_output, 3, 4, 3, 1)
 
         self.setLayout(main_layout)
 
     def get_params(self):
         params = {
-            'i': self.__i.value(),
-            'j': self.__j.value(),
-            'max_prob': self.__prob.value(),
-            'time_start': self.__start.value(),
-            'time_stop': self.__stop.value(),
-            'time_step': self.__step.value(),
+            'new_scenario_input': self.new_scenario_input.text(),
+            'node_name_input_1': self.node_name_input_1.text(),
+            'node_name_input_2': self.node_name_input_2.text(),
+            'node_name_input_3': self.node_name_input_3.text(),
+            'bound_value_input': self.bound_value_input.text(),
         }
         return params
 
+    @pyqtSlot()
+    def new_scenario_button_func(self):
+        params = self.get_params()
+        self.text_output.setText(str(params))
+        return None
 
     @pyqtSlot()
-    def __button_press(self):
-        params = self.get_params()
-        results = get_outputs(**params)
+    def restore_default_values_func(self):
+        return None
 
-        time = results['plot_dict'].pop('time')
-        self.graphics_tabs.clear()
-        for key, value in results['plot_dict'].items():
-            plot_widget = pg.PlotWidget()
-            plot_widget.plot(time, value)
-            self.graphics_tabs.addTab(plot_widget, key)
-        self.text_output.setText(results['classification_df'].to_string())
-        QApplication.processEvents()
+    @pyqtSlot()
+    def add_node_func(self):
+        return None
 
+    @pyqtSlot()
+    def delete_node_func(self):
+        return None
 
-
+    @pyqtSlot()
+    def apply_bound_value_func(self):
+        return None
 
 
 if __name__ == '__main__':
