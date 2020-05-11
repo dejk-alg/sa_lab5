@@ -82,6 +82,7 @@ class MainWindow(QWidget):
         self.data_tabs.addTab(self.plot_canvas, 'Імпульсне моделювання')
 
         self.scenario_len_input = QLineEdit()
+        self.scenario_len_input.setText('20')
         self.scenario_node = QComboBox()
         self.impulse_input = QLineEdit()
         self.impulse_time_input = QLineEdit()
@@ -230,9 +231,12 @@ class MainWindow(QWidget):
     @pyqtSlot()
     def add_impulse(self):
         self.graph_processor.add_impulse(
-            self.scenario_node.currentText(),
-            float(self.impulse_input.text()),
-            int(self.impulse_time_input.text()))
+            node=self.scenario_node.currentText(),
+            value=float(self.impulse_input.text()),
+            time=int(self.impulse_time_input.text()))
+        self.impulses_output.setText(
+            '\n'.join(f'час: {time}, імпульси: {impulses}'
+                      for time, impulses in self.graph_processor.scenario_impulses.items() if impulses))
 
 
 if __name__ == '__main__':
