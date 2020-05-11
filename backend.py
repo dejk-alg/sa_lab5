@@ -22,11 +22,11 @@ class GraphProcessor:
         self.base_values = None
         self.scenario_values = None
 
-        self.cur_time = 0
         self.process_scenario()
 
     def reset(self):
         self.graph = self.create_graph()
+        self.reset_scenario()
 
     def reset_scenario(self):
         if self.base_values is not None:
@@ -37,7 +37,6 @@ class GraphProcessor:
 
         self.base_values = None
         self.scenario_values = None
-        self.cur_time = 0
         self.process_scenario()
 
     def read_df(self):
@@ -117,24 +116,21 @@ class GraphProcessor:
     def process_impulse(self, node, value):
         self.graph.nodes[node]['value'] += value
 
-    def time_step(self):
-        self.impulses.update(self.scenario_impulses[self.cur_time])
+    def time_step(self, step_ind):
+        self.impulses.update(self.scenario_impulses[step_ind])
         new_impulses = defaultdict(lambda: 0)
         for node, value in self.impulses.items():
             self.process_impulse(node, value)
             for neighbor in self.graph.neighbors(node):
                 new_impulses[neighbor] += value * self.graph.edges[node, neighbor]['weight']
         self.impulses = dict(new_impulses)
-        self.cur_time += 1
 
     def process_scenario(self):
-        self.start_values = self.get_values()
-        self.scenario_values = []
+        self.scenario_values = [self.get_values()]
         for step_ind in range(self.scenario_len):
-            self.time_step()
+            self.time_step(step_ind)
             self.scenario_values.append(self.get_values())
-        self.set_values(self.start_values)
-        self.cur_time = 0
+        self.set_values(self.scenario_values[0])
 
     def plot_scenario(self, figure=None):
         if figure is None:

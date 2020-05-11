@@ -17,6 +17,9 @@ class TableModel(QAbstractTableModel):
         super(TableModel, self).__init__()
         self._data = data
 
+    def setContent(self, data):
+        self._data = data
+
     def data(self, index, role):
         if role == Qt.DisplayRole:
             value = self._data.iloc[index.row(), index.column()]
@@ -90,13 +93,12 @@ class MainWindow(QWidget):
         self.add_impulse_button.clicked.connect(self.add_impulse)
         self.impulses_output = QLabel('')
 
-        self.new_scenario_button = QPushButton('Обрахувати сценарій')
-        self.new_scenario_button.clicked.connect(self.new_scenario)
         self.restore_button = QPushButton('Відновити початкові значення')
         self.restore_button.clicked.connect(self.restore_default_values)
 
         self.new_node = QLineEdit()
         self.node_value = QLineEdit()
+        self.node_value.setText('1')
 
         self.edge_node_1 = QComboBox()
         self.edge_node_2 = QComboBox()
@@ -144,7 +146,6 @@ class MainWindow(QWidget):
         sub_layout.addWidget(self.impulses_output, 4, 0, 1, 3)
         main_layout.addLayout(sub_layout, 0, 4, 3, 1, Qt.AlignCenter)
 
-        main_layout.addWidget(self.new_scenario_button, 1, 4)
         main_layout.addWidget(self.restore_button, 2, 4)
 
         sub_layout = QGridLayout()
@@ -175,6 +176,7 @@ class MainWindow(QWidget):
     def _update(self):
         self._update_graph()
         self._update_text()
+        self.table.setModel(TableModel(self.graph_processor.df))
 
     def _update_text(self):
         self.text_output.clear()
@@ -192,19 +194,13 @@ class MainWindow(QWidget):
         self.graph_processor.scenario_impulses = [line.split(sep=',') for line in text.splitlines(keepends=False)]
 
     @pyqtSlot()
-    def new_scenario(self):
-        self.graph_processor.scenario_len = int(self.scenario_len_input.text())
-        self.graph_processor.process_scenario()
-        self._update_graph()
-
-    @pyqtSlot()
     def restore_default_values(self):
         self.graph_processor.reset()
         self._update()
 
     @pyqtSlot()
     def add_node(self):
-        self.graph_processor.add_node(self.new_node.text(), 0.5)
+        self.graph_processor.add_node(self.new_node.text(), float(self.node_value.text()))
         for node_box in (self.edge_node_1, self.edge_node_2, self.scenario_node):
             node_box.addItem(self.new_node.text())
         self.graph_processor.reset_scenario()
@@ -237,6 +233,9 @@ class MainWindow(QWidget):
         self.impulses_output.setText(
             '\n'.join(f'час: {time}, імпульси: {impulses}'
                       for time, impulses in self.graph_processor.scenario_impulses.items() if impulses))
+        self.graph_processor.scenario_len = int(self.scenario_len_input.text())
+        self.graph_processor.process_scenario()
+        self._update_graph()
 
 
 if __name__ == '__main__':
