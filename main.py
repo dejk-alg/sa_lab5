@@ -179,6 +179,7 @@ class MainWindow(QWidget):
         self.table.setModel(TableModel(self.graph_processor.df))
 
     def _update_text(self):
+        self.impulses_output.clear()
         self.text_output.clear()
         self.text_output.append(self.graph_processor.graph_info())
 
@@ -196,6 +197,7 @@ class MainWindow(QWidget):
     @pyqtSlot()
     def restore_default_values(self):
         self.graph_processor.reset()
+        self.graph_processor.reset_scenario()
         self._update()
 
     @pyqtSlot()
