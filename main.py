@@ -210,7 +210,7 @@ class MainWindow(QWidget):
     def delete_node(self):
         self.graph_processor.delete_node(self.new_node.text())
         for node_box in (self.edge_node_1, self.edge_node_2, self.scenario_node):
-            node_box.removeItem(self.edge_node_1.findText(self.new_node.text()))
+            node_box.removeItem(node_box.findText(self.new_node.text()))
         self.graph_processor.reset_scenario()
         self._update()
 
